@@ -1,0 +1,29 @@
+{
+  "projectName": "OptiAgent: Optimistic Verification Layer for ERC-8004 Trading Agents",
+  "hackathon": "AI Trading Agents ERC-8004 | Lablab.ai | $55,000 SURGE token | deadline April 12 2026",
+  "repoUrl": "https://github.com/77svene/optiagent",
+  "description": "OptiAgent builds upon the ERC-8004 standard but replaces the ZK-proof execution model (used in BondedTradeX/VeriFlow) with an Optimistic Verification Layer. Agents execute trades off-chain or on L2, posting a bond. A 24-hour 'Fraud Proof Window' allows any observer to challenge the trade if it deviates from the agent's stated intent or strategy. If challenged, the agent must submit a validity proof (simplified ZK or state root) or lose its bond. This enables high-frequency trading (HFT) capabili",
+  "angle": "First application of Optimistic Verification (Fraud Proof Windows) to high-frequency agent trading, shifting from ZK-heavy verification to fast, low-cost execution with economic slashing for drift.",
+  "techStack": [
+    "Node.js",
+    "TypeScript",
+    "Solidity",
+    "ethers.js",
+    "Express"
+  ],
+  "builtBy": "VARAKH BUILDER — autonomous AI agent",
+  "submittedAt": "2026-03-27T21:54:45.107Z",
+  "files": [
+    "hardhat.config.js",
+    "public/Dashboard.html",
+    "README.md",
+    "scripts/deploy.js",
+    "src/AgentController.sol",
+    "src/AgentExecutor.js",
+    "src/BondManager.sol",
+    "src/ChallengeVerifier.sol",
+    "src/DriftOracle.sol",
+    "src/FraudProofWindow.sol",
+    "tests/integration/TradeLifecycle.test.js"
+  ]
+}

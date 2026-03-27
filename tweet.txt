@@ -1,0 +1,7 @@
+Just shipped OptiAgent: Optimistic Verification Layer for ERC-8004 Trading Agents for AI Trading Agents ERC-8004 | Lablab.ai | $55,000 SURGE token | deadline April 12 2026!
+
+First application of Optimistic Verification (Fraud Proof Windows) to high-frequency agent trading, shifting from ZK-heavy verification to fast, low-cost execution with economic sl
+
+https://github.com/77svene/optiagent
+
+#hackathon #AI #Web3 #DeFi @lablabai
