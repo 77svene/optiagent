@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OptiAgent Dashboard - Optimistic Verification Layer</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.ethers.com/lib/ethers-5.2.umd.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0d1117; color: #c9d1d9; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+        header { background: #161b22; padding: 20px; border-bottom: 1px solid #30363d; margin-bottom: 30px; }
+        h1 { color: #58a6ff; font-size: 28px; margin-bottom: 10px; }
+        .status-bar { display: flex; gap: 20px; font-size: 14px; }
+        .status-item { display: flex; align-items: center; gap: 8px; }
+        .status-dot { width: 10px; height: 10px; border-radius: 50%; }
+        .status-dot.connected { background: #3fb950; }
+        .status-dot.disconnected { background: #f85149; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 30px; }
+        .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; }
+        .card h2 { color: #f0f6fc; font-size: 18px; margin-bottom: 15px; border-bottom: 1px solid #30363d; padding-bottom: 10px; }
+        .agent-list { display: flex; flex-direction: column; gap: 15px; }
+        .agent-item { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 15px; }
+        .agent-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .agent-address { font-family: monospace; color: #58a6ff; font-size: 12px; }
+        .agent-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; font-size: 13px; }
+        .stat-item { text-align: center; }
+        .stat-value { color: #f0f6fc; font-weight: 600; font-size: 16px; }
+        .stat-label { color: #8b949e; font-size: 11px; }
+        .challenge-list { display: flex; flex-direction: column; gap: 12px; }
+        .challenge-item { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 15px; }
+        .challenge-header { display: flex; justify-content: space-between; margin-bottom: 8px; }
+        .challenge-id { color: #f0f6fc; font-weight: 600; }
+        .challenge-status { padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+        .status-pending { background: #1f6feb; color: #58a6ff; }
+        .status-resolved { background: #238636; color: #3fb950; }
+        .challenge-details { font-size: 12px; color: #8b949e; margin-top: 8px; }
+        .btn { padding: 10px 20px; border: none; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+        .btn-primary { background: #1f6feb; color: #fff; }
+        .btn-primary:hover { background: #388bfd; }
+        .btn-danger { background: #f85149; color: #fff; }
+        .btn-danger:hover { background: #ff7b72; }
+        .btn:disabled { background: #30363d; color: #8b949e; cursor: not-allowed; }
+        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+        .modal { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 24px; max-width: 500px; width: 90%; }
+        .modal h3 { color: #f0f6fc; margin-bottom: 16px; }
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; color: #8b949e; font-size: 14px; margin-bottom: 8px; }
+        .form-group input, .form-group textarea { width: 100%; padding: 10px; border: 1px solid #30363d; border-radius: 6px; background: #0d1117; color: #c9d1d9; font-size: 14px; }
+        .form-group textarea { min-height: 100px; resize: vertical; }
+        .modal-actions { display: flex; gap: 12px; justify-content: flex-end; margin-top: 20px; }
+        .loading { text-align: center; padding: 40px; color: #8b949e; }
+        .error { background: #f85149; color: #fff; padding: 12px; border-radius: 6px; margin-bottom: 16px; }
+        .empty-state { text-align: center; padding: 40px; color: #8b949e; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        const CONTRACT_ADDRESSES = {
+            agentController: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb1",
+            driftOracle: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb2",
+            fraudProofWindow: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb3"
+        };
+
+        const CONTRACT_ABIS = {
+            agentController: [
+                "function getAgent(address) view returns (tuple(address agentAddress, uint256 bondAmount, uint256 lastTradeTimestamp, uint256 totalTrades, uint256 successfulTrades, uint256 challengedTrades, bool isActive, bytes32 strategyHash, uint256 driftScore))",
+                "function getActiveAgents() view returns (address[])",
+                "function getTrade(uint256) view returns (tuple(uint256 tradeId, address agent, bytes32 tradeHash, uint256 timestamp, uint256 bondPosted, uint256 fraudProofWindowEnd, bool isChallenged, bool isResolved, bytes32 challengeProof))",
+                "function getPendingChallenges() view returns (tuple(uint256 challengeId, uint256 tradeId, address challenger, bytes32 challengeReason, uint256 timestamp, bool isResolved)[])"
+            ],
+            driftOracle: [
+                "function getAgentBaseline(address) view returns (tuple(uint256 avgReturn, uint256 volatility, uint256 maxDrawdown, uint256 tradeCount))",
+                "function getDriftScore(address) view returns (uint256)"
+            ]
+        };
+
+        function formatAddress(addr) {
+            if (!addr) return "N/A";
+            return addr.substring(0, 6) + "..." + addr.substring(addr.length - 4);
+        }
+
+        function formatEther(wei) {
+            if (!wei) return "0.00";
+            return (parseFloat(ethers.formatEther(wei)) || 0).toFixed(2);
+        }
+
+        function formatTimestamp(ts) {
+            if (!ts) return "N/A";
+            const date = new Date(Number(ts) * 1000);
+            return date.toLocaleDateString() + " " + date.toLocaleTimeString();
+        }
+
+        function Dashboard() {
+            const [provider, setProvider] = useState(null);
+            const [signer, setSigner] = useState(null);
+            const [connected, setConnected] = useState(false);
+            const [agents, setAgents] = useState([]);
+            const [challenges, setChallenges] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(null);
+            const [showChallengeModal, setShowChallengeModal] = useState(false);
+            const [selectedAgent, setSelectedAgent] = useState(null);
+            const [challengeReason, setChallengeReason] = useState("");
+            const [submitting, setSubmitting] = useState(false);
+
+            useEffect(() => {
+                checkConnection();
+            }, []);
+
+            useEffect(() => {
+                if (connected) {
+                    loadData();
+                }
+            }, [connected]);
+
+            async function checkConnection() {
+                if (typeof window.ethereum !== 'undefined') {
+                    try {
+                        const web3Provider = new ethers.providers.Web3Provider(window.ethereum);
+                        const accounts = await web3Provider.send("eth_requestAccounts", []);
+                        if (accounts.length > 0) {
+                            setProvider(web3Provider);
+                            setSigner(web3Provider.getSigner());
+                            setConnected(true);
+                        }
+                    } catch (err) {
+                        setError("Failed to connect to wallet: " + err.message);
+                    }
+                } else {
+                    setError("Please install MetaMask to use this dashboard");
+                }
+            }
+
+            async function loadData() {
+                setLoading(true);
+                setError(null);
+                try {
+                    const agentController = new ethers.Contract(
+                        CONTRACT_ADDRESSES.agentController,
+                        CONTRACT_ABIS.agentController,
+                        provider
+                    );
+
+                    const driftOracle = new ethers.Contract(
+                        CONTRACT_ADDRESSES.driftOracle,
+                        CONTRACT_ABIS.driftOracle,
+                        provider
+                    );
+
+                    const agentAddresses = await agentController.getActiveAgents();
+                    const agentData = [];
+
+                    for (const addr of agentAddresses) {
+                        const agentInfo = await agentController.getAgent(addr);
+                        const baseline = await driftOracle.getAgentBaseline(addr);
+                        
+                        agentData.push({
+                            address: addr,
+                            agentAddress: agentInfo.agentAddress,
+                            bondAmount: agentInfo.bondAmount,
+                            lastTradeTimestamp: agentInfo.lastTradeTimestamp,
+                            totalTrades: agentInfo.totalTrades,
+                            successfulTrades: agentInfo.successfulTrades,
+                            challengedTrades: agentInfo.challengedTrades,
+                            isActive: agentInfo.isActive,
+                            driftScore: agentInfo.driftScore,
+                            baseline: baseline
+                        });
+                    }
+
+                    setAgents(agentData);
+
+                    const pendingChallenges = await agentController.getPendingChallenges();
+                    setChallenges(pendingChallenges.map(c => ({
+                        id: c.challengeId,
+                        tradeId: c.tradeId,
+                        challenger: c.challenger,
+                        reason: c.challengeReason,
+                        timestamp: c.timestamp,
+                        isResolved: c.isResolved
+                    })));
+
+                } catch (err) {
+                    console.error("Load data error:", err);
+                    setError("Failed to load data: " + err.message);
+                } finally {
+                    setLoading(false);
+                }
+            }
+
+            async function submitChallenge() {
+                if (!challengeReason.trim()) {
+                    setError("Please provide a challenge reason");
+                    return;
+                }
+
+                setSubmitting(true);
+                try {
+                    const agentController = new ethers.Contract(
+                        CONTRACT_ADDRESSES.agentController,
+                        CONTRACT_ABIS.agentController,
+                        signer
+                    );
+
+                    const tradeHash = ethers.keccak256(ethers.toUtf8Bytes(challengeReason));
+                    await agentController.submitChallenge(selectedAgent, tradeHash, challengeReason);
+                    
+                    setShowChallengeModal(false);
+                    setChallengeReason("");
+                    setSelectedAgent(null);
+                    await loadData();
+                    alert("Challenge submitted successfully!");
+                } catch (err) {
+                    setError("Failed to submit challenge: " + err.message);
+                } finally {
+                    setSubmitting(false);
+                }
+            }
+
+            function openChallengeModal(agent) {
+                setSelectedAgent(agent);
+                setShowChallengeModal(true);
+            }
+
+            function closeChallengeModal() {
+                setShowChallengeModal(false);
+                setChallengeReason("");
+                setSelectedAgent(null);
+            }
+
+            if (loading) {
+                return (
+                    <div className="container">
+                        <div className="loading">Loading dashboard...</div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="container">
+                    <header>
+                        <h1>OptiAgent Dashboard</h1>
+                        <div className="status-bar">
+                            <div className="status-item">
+                                <div className={`status-dot ${connected ? 'connected' : 'disconnected'}`}></div>
+                                <span>{connected ? 'Connected' : 'Disconnected'}</span>
+                            </div>
+                            <div className="status-item">
+                                <span>Active Agents: {agents.length}</span>
+                            </div>
+                            <div className="status-item">
+                                <span>Pending Challenges: {challenges.filter(c => !c.isResolved).length}</span>
+                            </div>
+                        </div>
+                    </header>
+
+                    {error && <div className="error">{error}</div>}
+
+                    <div className="grid">
+                        <div className="card">
+                            <h2>Active Agents</h2>
+                            <div className="agent-list">
+                                {agents.length === 0 ? (
+                                    <div className="empty-state">No active agents found</div>
+                                ) : (
+                                    agents.map(agent => (
+                                        <div key={agent.address} className="agent-item">
+                                            <div className="agent-header">
+                                                <span className="agent-address">{formatAddress(agent.address)}</span>
+                                                <button 
+                                                    className="btn btn-primary" 
+                                                    onClick={() => openChallengeModal(agent)}
+                                                    disabled={!connected}
+                                                >
+                                                    Challenge Trade
+                                                </button>
+                                            </div>
+                                            <div className="agent-stats">
+                                                <div className="stat-item">
+                                                    <div className="stat-value">{formatEther(agent.bondAmount)}</div>
+                                                    <div className="stat-label">Bond (ETH)</div>
+                                                </div>
+                                                <div className="stat-item">
+                                                    <div className="stat-value">{agent.totalTrades}</div>
+                                                    <div className="stat-label">Total Trades</div>
+                                                </div>
+                                                <div className="stat-item">
+                                                    <div className="stat-value">{agent.driftScore}</div>
+                                                    <div className="stat-label">Drift Score</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="card">
+                            <h2>Pending Challenges</h2>
+                            <div className="challenge-list">
+                                {challenges.filter(c => !c.isResolved).length === 0 ? (
+                                    <div className="empty-state">No pending challenges</div>
+                                ) : (
+                                    challenges.filter(c => !c.isResolved).map(challenge => (
+                                        <div key={challenge.id} className="challenge-item">
+                                            <div className="challenge-header">
+                                                <span className="challenge-id">Challenge #{challenge.id}</span>
+                                                <span className="challenge-status status-pending">Pending</span>
+                                            </div>
+                                            <div className="challenge-details">
+                                                <div>Trade ID: #{challenge.tradeId}</div>
+                                                <div>Challenger: {formatAddress(challenge.challenger)}</div>
+                                                <div>Submitted: {formatTimestamp(challenge.timestamp)}</div>
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    {showChallengeModal && (
+                        <div className="modal-overlay" onClick={closeChallengeModal}>
+                            <div className="modal" onClick={e => e.stopPropagation()}>
+                                <h3>Challenge Trade</h3>
+                                <div className="form-group">
+                                    <label>Agent Address</label>
+                                    <input type="text" value={selectedAgent ? formatAddress(selectedAgent.address) : ''} disabled />
+                                </div>
+                                <div className="form-group">
+                                    <label>Challenge Reason</label>
+                                    <textarea 
+                                        value={challengeReason}
+                                        onChange={e => setChallengeReason(e.target.value)}
+                                        placeholder="Describe why this trade violates the agent's strategy or intent..."
+                                    />
+                                </div>
+                                <div className="modal-actions">
+                                    <button className="btn" onClick={closeChallengeModal}>Cancel</button>
+                                    <button 
+                                        className="btn btn-danger" 
+                                        onClick={submitChallenge}
+                                        disabled={submitting}
+                                    >
+                                        {submitting ? 'Submitting...' : 'Submit Challenge'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<Dashboard />);
+    </script>
+</body>
+</html>
